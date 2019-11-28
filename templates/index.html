@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+</head>
+<body>
+<audio src="" controls autoplay id="player"></audio>
+<!--a5590163d9e9a54eda16a3746df28948-->
+玩具DeviceKey:<input type="text" id="devicekey">
+<button onclick="On_toy()">开机连接服务器</button>
+<p id="from_user"></p>
+<button onclick="recv_msg()">收到消息</button>
+<p>
+    <button onclick="start_reco()" style="background-color: red">录制消息</button>
+</p>
+<p>
+    <button onclick="stop_reco_audio()" style="background-color: green">停止录制</button>
+</p>
+<script
+        src="http://code.jquery.com/jquery-3.4.1.min.js"
+        integrity="sha256-CSXorXvZcTkaix6Yvo6HppcZGetbYMGWSFlBw8HfCJo="
+        crossorigin="anonymous"></script>
+
+<script type="application/javascript" src="https://cdn.bootcss.com/recorderjs/0.1.0/recorder.js"></script>
+<script>
+    var serv = "http://192.168.0.117:9527";
+    var ws = null;
+    var get_musisc = "http://192.168.0.117:9527/get_music/";
+    var get_chat = "http://192.168.0.117:9527/get_chat/";
+    var msg = null;
+    var toy_id = null;
+
+    function On_toy() {
+
+        var devicekey = document.getElementById("devicekey").value;
+        console.log(serv);
+
+        $.post(
+            serv + "/toy_login",
+            {devicekey: devicekey},
+            function (data) {
+                console.log(data);
+                document.getElementById("player").src = get_musisc + data.audio;
+                if (data.toy_id) {
+                    toy_id = data.toy_id;
+                    ws = new WebSocket("ws://192.168.0.117:9521/ws/" + data.toy_id);
+                    ws.onmessage = function (data) {
+                        console.log(data);
+                        msg = JSON.parse(data.data);
+                        if (msg.msg_type == "music") {
+                            document.getElementById("player").src = get_musisc + msg.msg;
+                        }
+                        if (msg.msg_type == "chat") {
+                            document.getElementById("player").src = get_chat + msg.msg;
+                            document.getElementById("from_user").innerText = msg.from_user;
+                        }
+                    };
+                }
+
+            }, "json"
+        )
+
+    }
+
+    function recv_msg() {
+        var from_user = document.getElementById("from_user").innerText;
+        $.post(
+            serv + "/recv_msg",
+            {"sender": from_user, "to_user": toy_id},
+            function (data) {
+                if (data.length == 0){
+                    return
+                }
+                var player = document.getElementById("player");
+                var chat = data.shift();
+                player.scr = get_chat + chat.msg;
+                player.onended = function (data) {
+                    if(data.length == 0){
+                        return
+                    }
+                    player.scr = get_chat + data.shift().msg
+                }
+
+            }, "json"
+        )
+
+    }
+
+    // web录音功能
+    var reco = null;
+    var audio_context = new AudioContext();
+    navigator.getUserMedia = (navigator.getUserMedia ||
+        navigator.webkitGetUserMedia ||
+        navigator.mozGetUserMedia ||
+        navigator.msGetUserMedia);
+
+    navigator.getUserMedia({audio: true}, create_stream, function (err) {
+        console.log(err)
+    });
+
+    function create_stream(user_media) {
+        var stream_input = audio_context.createMediaStreamSource(user_media);
+        reco = new Recorder(stream_input);
+    }
+
+    function start_reco() {
+        reco.record();
+    }
+
+
+    function stop_reco_audio() {
+        reco.stop();
+        get_audio();
+        reco.clear();
+    }
+
+
+    function get_audio() {
+        reco.exportWAV(function (wav_file) {
+            // wav_file = Blob对象
+            ws.send(wav_file)
+        })
+    }
+
+</script>
+</body>
+</html>
+
